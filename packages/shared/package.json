@@ -1,0 +1,14 @@
+{
+  "name": "@mock-api-builder/shared",
+  "version": "1.0.0",
+  "description": "Shared types and interfaces for Mock API Builder",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}
