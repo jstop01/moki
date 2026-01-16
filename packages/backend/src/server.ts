@@ -1,11 +1,16 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import { createServer } from 'http';
 import adminRoutes from './routes/admin';
 import mockRoutes from './routes/mock';
+import websocketAdminRoutes from './routes/websocket-admin';
+import graphqlAdminRoutes, { findGraphQLEndpointByPath, handleGraphQLRequest } from './routes/graphql';
 import { memoryStore } from './storage/MemoryStore';
+import { webSocketHandler } from './websocket/WebSocketHandler';
 
 const app = express();
+const server = createServer(app);
 const PORT = process.env.PORT || 3001;
 
 // ETag 비활성화 (304 캐싱 방지)
@@ -46,6 +51,8 @@ app.get('/', (req: Request, res: Response) => {
     endpoints: {
       admin: '/api/admin',
       mock: '/mock',
+      websocket: '/ws/*',
+      graphql: '/graphql (or custom path)',
     },
     documentation: 'https://github.com/yourusername/mock-api-builder',
   });
@@ -53,6 +60,28 @@ app.get('/', (req: Request, res: Response) => {
 
 // Admin routes (for managing endpoints and logs)
 app.use('/api/admin', adminRoutes);
+
+// WebSocket Admin routes
+app.use('/api/admin/websocket', websocketAdminRoutes);
+
+// GraphQL Admin routes
+app.use('/api/admin/graphql', graphqlAdminRoutes);
+
+// Dynamic GraphQL endpoint handler
+app.use((req: Request, res: Response, next: NextFunction) => {
+  // Only handle POST requests for GraphQL
+  if (req.method !== 'POST') {
+    return next();
+  }
+
+  // Check if there's a matching GraphQL endpoint
+  const graphqlEndpoint = findGraphQLEndpointByPath(req.path);
+  if (graphqlEndpoint) {
+    return handleGraphQLRequest(graphqlEndpoint)(req, res);
+  }
+
+  next();
+});
 
 // Mock routes (user-defined endpoints)
 // IMPORTANT: This must be last to catch all remaining routes
@@ -109,13 +138,18 @@ function loadPersistedData(): boolean {
 // SERVER STARTUP
 // ============================================
 
-app.listen(PORT, () => {
+// Initialize WebSocket handler
+webSocketHandler.initialize(server);
+
+server.listen(PORT, () => {
   console.log('');
   console.log('🚀 Mock API Builder Server Started!');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`📡 Server URL:        http://localhost:${PORT}`);
   console.log(`🎛️  Admin API:        http://localhost:${PORT}/api/admin`);
   console.log(`🎭 Mock API:          http://localhost:${PORT}/mock`);
+  console.log(`🔌 WebSocket:         ws://localhost:${PORT}/ws/*`);
+  console.log(`📊 GraphQL:           http://localhost:${PORT}/graphql`);
   console.log(`💚 Health Check:      http://localhost:${PORT}/api/admin/health`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');

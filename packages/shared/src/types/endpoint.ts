@@ -1,3 +1,40 @@
+import type { AuthConfig } from './auth';
+import type { EndpointEnvironments } from './environment';
+
+/**
+ * Rate limit key source - what to use as the rate limit key
+ */
+export type RateLimitKeyBy = 'ip' | 'header' | 'query';
+
+/**
+ * Rate limit configuration for an endpoint
+ */
+export interface RateLimitConfig {
+  /** Enable/disable rate limiting */
+  enabled: boolean;
+
+  /** Maximum requests allowed per time window */
+  requestsPerWindow: number;
+
+  /** Time window in seconds (default: 60) */
+  windowSeconds?: number;
+
+  /** Burst limit - allows this many extra requests beyond the limit (default: 0) */
+  burstLimit?: number;
+
+  /** What to use as the rate limit key */
+  keyBy: RateLimitKeyBy;
+
+  /** Header or query param name when keyBy is 'header' or 'query' */
+  keyName?: string;
+
+  /** Custom response when rate limited */
+  response?: {
+    status: number;
+    data: any;
+  };
+}
+
 /**
  * HTTP Methods supported by the Mock API
  */
@@ -83,18 +120,33 @@ export interface Endpoint {
   /** Conditional responses based on query params, headers, or body */
   conditionalResponses?: ConditionalResponse[];
 
+  /** Proxy configuration for forwarding to real API */
+  proxyConfig?: ProxyConfig;
+
+  /** Scenario configuration for sequential/random responses */
+  scenarioConfig?: ScenarioConfig;
+
+  /** Auth configuration for endpoint protection */
+  authConfig?: AuthConfig;
+
+  /** Rate limit configuration */
+  rateLimitConfig?: RateLimitConfig;
+
+  /** Environment-specific overrides */
+  environmentOverrides?: EndpointEnvironments;
+
   /** Human-readable description */
   description?: string;
-  
+
   /** Endpoint status */
   status?: EndpointStatus;
-  
+
   /** Tags for categorization */
   tags?: string[];
-  
+
   /** Creation timestamp */
   createdAt: Date;
-  
+
   /** Last update timestamp */
   updatedAt: Date;
 }
@@ -110,6 +162,11 @@ export interface CreateEndpointDto {
   responseHeaders?: Record<string, string>;
   delay?: DelayConfig;
   conditionalResponses?: ConditionalResponse[];
+  proxyConfig?: ProxyConfig;
+  scenarioConfig?: ScenarioConfig;
+  authConfig?: AuthConfig;
+  rateLimitConfig?: RateLimitConfig;
+  environmentOverrides?: EndpointEnvironments;
   description?: string;
   status?: EndpointStatus;
   tags?: string[];
@@ -126,9 +183,78 @@ export interface UpdateEndpointDto {
   responseHeaders?: Record<string, string>;
   delay?: DelayConfig;
   conditionalResponses?: ConditionalResponse[];
+  proxyConfig?: ProxyConfig;
+  scenarioConfig?: ScenarioConfig;
+  authConfig?: AuthConfig;
+  rateLimitConfig?: RateLimitConfig;
+  environmentOverrides?: EndpointEnvironments;
   description?: string;
   status?: EndpointStatus;
   tags?: string[];
+}
+
+/**
+ * Proxy configuration for forwarding requests to real API
+ */
+export interface ProxyConfig {
+  enabled: boolean;
+  targetUrl: string;
+  pathRewrite?: Record<string, string>;
+  headers?: Record<string, string>;
+  timeout?: number;
+  cacheResponse?: boolean;
+  cacheTtl?: number; // Cache TTL in seconds
+}
+
+/**
+ * Scenario mode type
+ * - sequential: 순차적 응답 (1번째, 2번째, 3번째...)
+ * - random: 랜덤 응답
+ * - weighted: 가중치 기반 랜덤
+ */
+export type ScenarioMode = 'sequential' | 'random' | 'weighted';
+
+/**
+ * Single scenario response
+ */
+export interface ScenarioResponse {
+  /** Response order (for sequential mode) */
+  order?: number;
+
+  /** Weight for random selection (for weighted mode) */
+  weight?: number;
+
+  /** Name/description of this scenario */
+  name?: string;
+
+  /** Response status code */
+  responseStatus: number;
+
+  /** Response data */
+  responseData: any;
+
+  /** Optional delay */
+  delay?: DelayConfig;
+}
+
+/**
+ * Scenario configuration for sequential/random responses
+ */
+export interface ScenarioConfig {
+  /** Enable/disable scenario mode */
+  enabled: boolean;
+
+  /** Scenario mode type */
+  mode: ScenarioMode;
+
+  /** Reset counter after N seconds (0 = never reset) */
+  resetAfter?: number;
+
+  /** Loop back to first response after last (for sequential mode) */
+  loop?: boolean;
+
+  /** Scenario responses */
+  responses: ScenarioResponse[];
 }
 
 /**

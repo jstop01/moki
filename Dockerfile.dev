@@ -1,0 +1,30 @@
+# Development Dockerfile with hot reload support
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies for file watching
+RUN apk add --no-cache git
+
+# Copy package files
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/backend/package.json ./packages/backend/
+COPY packages/frontend/package.json ./packages/frontend/
+
+# Install all dependencies (including devDependencies)
+RUN npm ci
+
+# Copy source code
+COPY packages/ ./packages/
+
+# Build shared package (required for other packages)
+RUN npm run build -w @mock-api-builder/shared
+
+# Expose ports
+# 3001: Backend API
+# 5173: Vite dev server
+EXPOSE 3001 5173
+
+# Start development servers
+CMD ["npm", "run", "dev"]

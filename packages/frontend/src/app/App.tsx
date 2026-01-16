@@ -6,8 +6,10 @@ import { EndpointDetail } from '@/app/components/EndpointDetail';
 import { RequestLogs } from '@/app/components/RequestLogs';
 import { ImportExport } from '@/app/components/ImportExport';
 import { ApiPlayground } from '@/app/components/ApiPlayground';
+import { WebSocketManager } from '@/app/components/WebSocketManager';
+import { GraphQLManager } from '@/app/components/GraphQLManager';
 
-type Tab = 'dashboard' | 'endpoints' | 'logs' | 'import-export' | 'playground' | 'settings';
+type Tab = 'dashboard' | 'endpoints' | 'logs' | 'import-export' | 'playground' | 'websocket' | 'graphql' | 'settings';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -48,6 +50,14 @@ export default function App() {
 
     if (activeTab === 'playground') {
       return <ApiPlayground />;
+    }
+
+    if (activeTab === 'websocket') {
+      return <WebSocketManager />;
+    }
+
+    if (activeTab === 'graphql') {
+      return <GraphQLManager />;
     }
 
     return null;

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Edit, Trash2, Copy, Code, Loader2, Save, ChevronDown, ChevronUp, GitBranch, HelpCircle, Sparkles, History, RotateCcw } from 'lucide-react';
-import { HttpMethod, Condition, ConditionalResponse, EndpointWithResponse, ConditionOperator, DelayConfig } from '@/app/types';
+import { ArrowLeft, Plus, Edit, Trash2, Copy, Code, Loader2, Save, ChevronDown, ChevronUp, GitBranch, HelpCircle, Sparkles, History, RotateCcw, Globe, Play, RefreshCw, Shield, Key, Timer, Layers } from 'lucide-react';
+import { HttpMethod, Condition, ConditionalResponse, EndpointWithResponse, ConditionOperator, DelayConfig, ProxyConfig, ScenarioConfig, ScenarioResponse, ScenarioMode, AuthConfig, AuthMethod, BearerTokenConfig, JwtConfig, ApiKeyConfig, BasicAuthConfig, RateLimitConfig, RateLimitKeyBy, Environment, EnvironmentOverride, EndpointEnvironments, EnvironmentSettings } from '@/app/types';
 
 interface ResponseHistory {
   id: string;
@@ -125,10 +125,50 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
   const [conditionalResponses, setConditionalResponses] = useState<ConditionalResponse[]>([]);
   const [expandedConditions, setExpandedConditions] = useState<number[]>([]);
 
+  // Proxy state
+  const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [proxyTargetUrl, setProxyTargetUrl] = useState('');
+  const [proxyCacheEnabled, setProxyCacheEnabled] = useState(false);
+  const [proxyCacheTtl, setProxyCacheTtl] = useState(300);
+  const [proxyTimeout, setProxyTimeout] = useState(30000);
+
   // History state
   const [history, setHistory] = useState<ResponseHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [restoring, setRestoring] = useState(false);
+
+  // Scenario state
+  const [scenarioEnabled, setScenarioEnabled] = useState(false);
+  const [scenarioMode, setScenarioMode] = useState<ScenarioMode>('sequential');
+  const [scenarioLoop, setScenarioLoop] = useState(true);
+  const [scenarioResetAfter, setScenarioResetAfter] = useState(0);
+  const [scenarioResponses, setScenarioResponses] = useState<ScenarioResponse[]>([]);
+  const [expandedScenarios, setExpandedScenarios] = useState<number[]>([]);
+
+  // Auth state
+  const [authEnabled, setAuthEnabled] = useState(false);
+  const [authMethod, setAuthMethod] = useState<AuthMethod>('bearer');
+  const [bearerTokens, setBearerTokens] = useState<string[]>(['']);
+  const [bearerAcceptAny, setBearerAcceptAny] = useState(false);
+  const [jwtCheckExpiry, setJwtCheckExpiry] = useState(true);
+  const [jwtRequiredClaims, setJwtRequiredClaims] = useState<string>('');
+  const [jwtValidIssuers, setJwtValidIssuers] = useState<string>('');
+  const [apiKeyHeaderName, setApiKeyHeaderName] = useState('X-API-Key');
+  const [apiKeyValidKeys, setApiKeyValidKeys] = useState<string[]>(['']);
+  const [basicAuthCredentials, setBasicAuthCredentials] = useState<Array<{ username: string; password: string }>>([{ username: '', password: '' }]);
+
+  // Rate Limit state
+  const [rateLimitEnabled, setRateLimitEnabled] = useState(false);
+  const [rateLimitRequests, setRateLimitRequests] = useState(100);
+  const [rateLimitWindow, setRateLimitWindow] = useState(60);
+  const [rateLimitBurst, setRateLimitBurst] = useState(0);
+  const [rateLimitKeyBy, setRateLimitKeyBy] = useState<RateLimitKeyBy>('ip');
+  const [rateLimitKeyName, setRateLimitKeyName] = useState('');
+
+  // Environment Override state
+  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [environmentOverrides, setEnvironmentOverrides] = useState<EndpointEnvironments>({});
+  const [envSettingsEnabled, setEnvSettingsEnabled] = useState(false);
 
   const loadHistory = async () => {
     try {
@@ -139,6 +179,19 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
       }
     } catch (error) {
       console.error('Failed to load history:', error);
+    }
+  };
+
+  const loadEnvironments = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/environment/settings`);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setEnvironments(json.data.environments || []);
+        setEnvSettingsEnabled(json.data.enabled || false);
+      }
+    } catch (error) {
+      console.error('Failed to load environments:', error);
     }
   };
 
@@ -184,6 +237,11 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
           responseHeaders: ep.responseHeaders,
           delay: ep.delay,
           conditionalResponses: ep.conditionalResponses || [],
+          proxyConfig: ep.proxyConfig,
+          scenarioConfig: ep.scenarioConfig,
+          authConfig: ep.authConfig,
+          rateLimitConfig: ep.rateLimitConfig,
+          environmentOverrides: ep.environmentOverrides,
         };
         setEndpoint(mappedEndpoint);
 
@@ -210,6 +268,106 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
             : JSON.stringify(mappedEndpoint.responseData, null, 2)
         );
         setConditionalResponses(mappedEndpoint.conditionalResponses || []);
+        // Initialize proxy config
+        if (mappedEndpoint.proxyConfig) {
+          setProxyEnabled(mappedEndpoint.proxyConfig.enabled || false);
+          setProxyTargetUrl(mappedEndpoint.proxyConfig.targetUrl || '');
+          setProxyCacheEnabled(mappedEndpoint.proxyConfig.cacheResponse || false);
+          setProxyCacheTtl(mappedEndpoint.proxyConfig.cacheTtl || 300);
+          setProxyTimeout(mappedEndpoint.proxyConfig.timeout || 30000);
+        } else {
+          setProxyEnabled(false);
+          setProxyTargetUrl('');
+          setProxyCacheEnabled(false);
+          setProxyCacheTtl(300);
+          setProxyTimeout(30000);
+        }
+        // Initialize scenario config
+        if (mappedEndpoint.scenarioConfig) {
+          setScenarioEnabled(mappedEndpoint.scenarioConfig.enabled || false);
+          setScenarioMode(mappedEndpoint.scenarioConfig.mode || 'sequential');
+          setScenarioLoop(mappedEndpoint.scenarioConfig.loop ?? true);
+          setScenarioResetAfter(mappedEndpoint.scenarioConfig.resetAfter || 0);
+          setScenarioResponses(mappedEndpoint.scenarioConfig.responses || []);
+        } else {
+          setScenarioEnabled(false);
+          setScenarioMode('sequential');
+          setScenarioLoop(true);
+          setScenarioResetAfter(0);
+          setScenarioResponses([]);
+        }
+        // Initialize auth config
+        if (mappedEndpoint.authConfig) {
+          setAuthEnabled(mappedEndpoint.authConfig.enabled || false);
+          setAuthMethod(mappedEndpoint.authConfig.method || 'bearer');
+          if (mappedEndpoint.authConfig.bearerConfig) {
+            setBearerTokens(mappedEndpoint.authConfig.bearerConfig.validTokens?.length > 0
+              ? mappedEndpoint.authConfig.bearerConfig.validTokens
+              : ['']);
+            setBearerAcceptAny(mappedEndpoint.authConfig.bearerConfig.acceptAny || false);
+          } else {
+            setBearerTokens(['']);
+            setBearerAcceptAny(false);
+          }
+          if (mappedEndpoint.authConfig.jwtConfig) {
+            setJwtCheckExpiry(mappedEndpoint.authConfig.jwtConfig.checkExpiry ?? true);
+            setJwtRequiredClaims(mappedEndpoint.authConfig.jwtConfig.requiredClaims?.join(', ') || '');
+            setJwtValidIssuers(mappedEndpoint.authConfig.jwtConfig.validIssuers?.join(', ') || '');
+          } else {
+            setJwtCheckExpiry(true);
+            setJwtRequiredClaims('');
+            setJwtValidIssuers('');
+          }
+          if (mappedEndpoint.authConfig.apiKeyConfig) {
+            setApiKeyHeaderName(mappedEndpoint.authConfig.apiKeyConfig.headerName || 'X-API-Key');
+            setApiKeyValidKeys(mappedEndpoint.authConfig.apiKeyConfig.validKeys?.length > 0
+              ? mappedEndpoint.authConfig.apiKeyConfig.validKeys
+              : ['']);
+          } else {
+            setApiKeyHeaderName('X-API-Key');
+            setApiKeyValidKeys(['']);
+          }
+          if (mappedEndpoint.authConfig.basicAuthConfig) {
+            setBasicAuthCredentials(mappedEndpoint.authConfig.basicAuthConfig.credentials?.length > 0
+              ? mappedEndpoint.authConfig.basicAuthConfig.credentials
+              : [{ username: '', password: '' }]);
+          } else {
+            setBasicAuthCredentials([{ username: '', password: '' }]);
+          }
+        } else {
+          setAuthEnabled(false);
+          setAuthMethod('bearer');
+          setBearerTokens(['']);
+          setBearerAcceptAny(false);
+          setJwtCheckExpiry(true);
+          setJwtRequiredClaims('');
+          setJwtValidIssuers('');
+          setApiKeyHeaderName('X-API-Key');
+          setApiKeyValidKeys(['']);
+          setBasicAuthCredentials([{ username: '', password: '' }]);
+        }
+        // Initialize rate limit config
+        if (mappedEndpoint.rateLimitConfig) {
+          setRateLimitEnabled(mappedEndpoint.rateLimitConfig.enabled || false);
+          setRateLimitRequests(mappedEndpoint.rateLimitConfig.requestsPerWindow || 100);
+          setRateLimitWindow(mappedEndpoint.rateLimitConfig.windowSeconds || 60);
+          setRateLimitBurst(mappedEndpoint.rateLimitConfig.burstLimit || 0);
+          setRateLimitKeyBy(mappedEndpoint.rateLimitConfig.keyBy || 'ip');
+          setRateLimitKeyName(mappedEndpoint.rateLimitConfig.keyName || '');
+        } else {
+          setRateLimitEnabled(false);
+          setRateLimitRequests(100);
+          setRateLimitWindow(60);
+          setRateLimitBurst(0);
+          setRateLimitKeyBy('ip');
+          setRateLimitKeyName('');
+        }
+        // Initialize environment overrides
+        if (mappedEndpoint.environmentOverrides) {
+          setEnvironmentOverrides(mappedEndpoint.environmentOverrides);
+        } else {
+          setEnvironmentOverrides({});
+        }
       } else {
         setEndpoint(null);
       }
@@ -223,6 +381,7 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
   useEffect(() => {
     loadData();
     loadHistory();
+    loadEnvironments();
   }, [endpointId]);
 
   const handleSave = async () => {
@@ -257,6 +416,92 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
         ? { min: editDelayMin, max: editDelayMax }
         : editDelayFixed;
 
+      // Prepare proxy config
+      const proxyConfig: ProxyConfig | undefined = proxyEnabled
+        ? {
+            enabled: true,
+            targetUrl: proxyTargetUrl,
+            cacheResponse: proxyCacheEnabled,
+            cacheTtl: proxyCacheTtl,
+            timeout: proxyTimeout,
+          }
+        : undefined;
+
+      // Prepare scenario config
+      const parsedScenarioResponses = scenarioResponses.map((sr) => ({
+        ...sr,
+        responseData:
+          typeof sr.responseData === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(sr.responseData);
+                } catch {
+                  return sr.responseData;
+                }
+              })()
+            : sr.responseData,
+      }));
+
+      const scenarioConfig: ScenarioConfig | undefined = scenarioEnabled
+        ? {
+            enabled: true,
+            mode: scenarioMode,
+            loop: scenarioLoop,
+            resetAfter: scenarioResetAfter,
+            responses: parsedScenarioResponses,
+          }
+        : undefined;
+
+      // Prepare auth config
+      let authConfig: AuthConfig | undefined;
+      if (authEnabled) {
+        const baseAuthConfig: AuthConfig = {
+          enabled: true,
+          method: authMethod,
+        };
+
+        switch (authMethod) {
+          case 'bearer':
+            baseAuthConfig.bearerConfig = {
+              validTokens: bearerTokens.filter(t => t.trim() !== ''),
+              acceptAny: bearerAcceptAny,
+            };
+            break;
+          case 'jwt':
+            baseAuthConfig.jwtConfig = {
+              checkExpiry: jwtCheckExpiry,
+              requiredClaims: jwtRequiredClaims ? jwtRequiredClaims.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+              validIssuers: jwtValidIssuers ? jwtValidIssuers.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+            };
+            break;
+          case 'apiKey':
+            baseAuthConfig.apiKeyConfig = {
+              headerName: apiKeyHeaderName || 'X-API-Key',
+              validKeys: apiKeyValidKeys.filter(k => k.trim() !== ''),
+            };
+            break;
+          case 'basic':
+            baseAuthConfig.basicAuthConfig = {
+              credentials: basicAuthCredentials.filter(c => c.username.trim() !== '' && c.password.trim() !== ''),
+            };
+            break;
+        }
+
+        authConfig = baseAuthConfig;
+      }
+
+      // Prepare rate limit config
+      const rateLimitConfig: RateLimitConfig | undefined = rateLimitEnabled
+        ? {
+            enabled: true,
+            requestsPerWindow: rateLimitRequests,
+            windowSeconds: rateLimitWindow,
+            burstLimit: rateLimitBurst,
+            keyBy: rateLimitKeyBy,
+            keyName: rateLimitKeyBy !== 'ip' ? rateLimitKeyName : undefined,
+          }
+        : undefined;
+
       const res = await fetch(`${API_URL}/api/admin/endpoints/${endpointId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -268,6 +513,11 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
           responseData,
           delay: delayConfig,
           conditionalResponses: parsedConditionalResponses,
+          proxyConfig,
+          scenarioConfig,
+          authConfig,
+          rateLimitConfig,
+          environmentOverrides: Object.keys(environmentOverrides).length > 0 ? environmentOverrides : undefined,
         }),
       });
 
@@ -332,6 +582,48 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
         ? expandedConditions.filter((i) => i !== index)
         : [...expandedConditions, index]
     );
+  };
+
+  // Scenario Response 관리 함수들
+  const addScenarioResponse = () => {
+    const newSr: ScenarioResponse = {
+      order: scenarioResponses.length + 1,
+      name: `응답 ${scenarioResponses.length + 1}`,
+      responseStatus: 200,
+      responseData: '{\n  \n}',
+      weight: 1,
+    };
+    setScenarioResponses([...scenarioResponses, newSr]);
+    setExpandedScenarios([...expandedScenarios, scenarioResponses.length]);
+  };
+
+  const removeScenarioResponse = (index: number) => {
+    setScenarioResponses(scenarioResponses.filter((_, i) => i !== index));
+    setExpandedScenarios(expandedScenarios.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i)));
+  };
+
+  const updateScenarioResponse = (index: number, updates: Partial<ScenarioResponse>) => {
+    setScenarioResponses(
+      scenarioResponses.map((sr, i) => (i === index ? { ...sr, ...updates } : sr))
+    );
+  };
+
+  const toggleScenarioExpanded = (index: number) => {
+    setExpandedScenarios(
+      expandedScenarios.includes(index)
+        ? expandedScenarios.filter((i) => i !== index)
+        : [...expandedScenarios, index]
+    );
+  };
+
+  const resetScenarioCounter = async () => {
+    try {
+      await fetch(`${API_URL}/api/admin/endpoints/${endpointId}/scenario/reset`, {
+        method: 'POST',
+      });
+    } catch (error) {
+      console.error('Failed to reset scenario counter:', error);
+    }
   };
 
   const getMethodColor = (method: HttpMethod) => {
@@ -877,6 +1169,994 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
               )}
             </div>
 
+            {/* 프록시 설정 */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <Globe className="w-5 h-5" />
+                    프록시 모드
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    실제 API로 요청을 전달하고 응답을 캐싱합니다.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={proxyEnabled}
+                    onChange={(e) => setProxyEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+
+              {proxyEnabled && (
+                <div className="space-y-4 border-t border-gray-200 pt-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      대상 API URL <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="url"
+                      value={proxyTargetUrl}
+                      onChange={(e) => setProxyTargetUrl(e.target.value)}
+                      placeholder="https://api.example.com"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      요청이 이 URL로 전달됩니다. 현재 엔드포인트 경로가 추가됩니다.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        타임아웃 (ms)
+                      </label>
+                      <input
+                        type="number"
+                        value={proxyTimeout}
+                        onChange={(e) => setProxyTimeout(Number(e.target.value))}
+                        min="1000"
+                        max="120000"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        응답 캐싱
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <label className="inline-flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={proxyCacheEnabled}
+                            onChange={(e) => setProxyCacheEnabled(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-700">캐싱 활성화</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {proxyCacheEnabled && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        캐시 TTL (초)
+                      </label>
+                      <input
+                        type="number"
+                        value={proxyCacheTtl}
+                        onChange={(e) => setProxyCacheTtl(Number(e.target.value))}
+                        min="1"
+                        max="86400"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        성공적인 응답이 {proxyCacheTtl}초 동안 캐싱됩니다.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800">
+                      <strong>참고:</strong> 프록시 모드가 활성화되면 위의 Mock 응답 설정은 무시되고,
+                      실제 API 응답이 반환됩니다. Authorization, X-API-Key 등의 헤더는 자동으로 전달됩니다.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 시나리오 모드 */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <Play className="w-5 h-5" />
+                    시나리오 모드
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    호출 순서에 따라 다른 응답을 반환합니다. (예: 첫 번째 성공, 두 번째 실패)
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={scenarioEnabled}
+                    onChange={(e) => setScenarioEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                </label>
+              </div>
+
+              {scenarioEnabled && (
+                <div className="space-y-4 border-t border-gray-200 pt-4">
+                  {/* 시나리오 설정 */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">모드</label>
+                      <select
+                        value={scenarioMode}
+                        onChange={(e) => setScenarioMode(e.target.value as ScenarioMode)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option value="sequential">순차 (Sequential)</option>
+                        <option value="random">랜덤 (Random)</option>
+                        <option value="weighted">가중치 (Weighted)</option>
+                      </select>
+                    </div>
+
+                    {scenarioMode === 'sequential' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">반복</label>
+                        <label className="inline-flex items-center mt-2">
+                          <input
+                            type="checkbox"
+                            checked={scenarioLoop}
+                            onChange={(e) => setScenarioLoop(e.target.checked)}
+                            className="w-4 h-4 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-700">마지막 응답 후 처음부터</span>
+                        </label>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        자동 리셋 (초)
+                      </label>
+                      <input
+                        type="number"
+                        value={scenarioResetAfter}
+                        onChange={(e) => setScenarioResetAfter(Number(e.target.value))}
+                        min="0"
+                        placeholder="0 = 리셋 안함"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        마지막 요청 후 N초 지나면 카운터 리셋
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 카운터 리셋 버튼 */}
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={resetScenarioCounter}
+                      className="flex items-center gap-1 px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 rounded-lg"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      카운터 리셋
+                    </button>
+                  </div>
+
+                  {/* 시나리오 응답 목록 */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-medium text-gray-700">
+                        시나리오 응답 ({scenarioResponses.length}개)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={addScenarioResponse}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                      >
+                        <Plus className="w-4 h-4" />
+                        응답 추가
+                      </button>
+                    </div>
+
+                    {scenarioResponses.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
+                        <Play className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                        <p>시나리오 응답이 없습니다</p>
+                        <p className="text-sm">위 버튼을 클릭해서 추가하세요</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {scenarioResponses.map((sr, srIndex) => (
+                          <div
+                            key={srIndex}
+                            className="border border-gray-200 rounded-lg overflow-hidden"
+                          >
+                            {/* 시나리오 헤더 */}
+                            <div
+                              className="flex items-center justify-between p-4 bg-purple-50 cursor-pointer hover:bg-purple-100"
+                              onClick={() => toggleScenarioExpanded(srIndex)}
+                            >
+                              <div className="flex items-center gap-3">
+                                {expandedScenarios.includes(srIndex) ? (
+                                  <ChevronUp className="w-4 h-4 text-gray-500" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                                )}
+                                <span className="font-mono text-sm bg-purple-200 text-purple-800 px-2 py-0.5 rounded">
+                                  #{scenarioMode === 'sequential' ? sr.order || srIndex + 1 : srIndex + 1}
+                                </span>
+                                <span className="font-medium text-gray-900">
+                                  {sr.name || `응답 ${srIndex + 1}`}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                  sr.responseStatus >= 200 && sr.responseStatus < 300
+                                    ? 'bg-green-100 text-green-700'
+                                    : sr.responseStatus >= 400
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-gray-100 text-gray-700'
+                                }`}>
+                                  {sr.responseStatus}
+                                </span>
+                                {scenarioMode === 'weighted' && (
+                                  <span className="text-xs text-gray-500">
+                                    (가중치: {sr.weight || 1})
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeScenarioResponse(srIndex);
+                                }}
+                                className="p-1 text-red-500 hover:bg-red-50 rounded"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            {/* 시나리오 상세 */}
+                            {expandedScenarios.includes(srIndex) && (
+                              <div className="p-4 space-y-4 border-t border-gray-200">
+                                <div className="grid grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                      이름
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={sr.name || ''}
+                                      onChange={(e) =>
+                                        updateScenarioResponse(srIndex, { name: e.target.value })
+                                      }
+                                      placeholder="예: 성공 응답"
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    />
+                                  </div>
+
+                                  {scenarioMode === 'sequential' && (
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        순서
+                                      </label>
+                                      <input
+                                        type="number"
+                                        value={sr.order || srIndex + 1}
+                                        onChange={(e) =>
+                                          updateScenarioResponse(srIndex, { order: Number(e.target.value) })
+                                        }
+                                        min="1"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                      />
+                                    </div>
+                                  )}
+
+                                  {scenarioMode === 'weighted' && (
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        가중치
+                                      </label>
+                                      <input
+                                        type="number"
+                                        value={sr.weight || 1}
+                                        onChange={(e) =>
+                                          updateScenarioResponse(srIndex, { weight: Number(e.target.value) })
+                                        }
+                                        min="1"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                      />
+                                    </div>
+                                  )}
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                      상태 코드
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={sr.responseStatus}
+                                      onChange={(e) =>
+                                        updateScenarioResponse(srIndex, { responseStatus: Number(e.target.value) })
+                                      }
+                                      min="100"
+                                      max="599"
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <label className="block text-sm font-medium text-gray-700">
+                                      응답 Body (JSON)
+                                    </label>
+                                    <TemplateVariablesHelper />
+                                  </div>
+                                  <textarea
+                                    value={
+                                      typeof sr.responseData === 'string'
+                                        ? sr.responseData
+                                        : JSON.stringify(sr.responseData, null, 2)
+                                    }
+                                    onChange={(e) =>
+                                      updateScenarioResponse(srIndex, { responseData: e.target.value })
+                                    }
+                                    rows={6}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-sm"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                    <p className="text-sm text-purple-800">
+                      <strong>참고:</strong> 시나리오 모드가 활성화되면 조건부 응답보다 우선 적용됩니다.
+                      프록시 모드가 활성화된 경우 시나리오는 무시됩니다.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 인증 설정 */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <Shield className="w-5 h-5" />
+                    인증 시뮬레이션
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    요청에 대한 인증을 검증합니다. (Bearer, JWT, API Key, Basic Auth)
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={authEnabled}
+                    onChange={(e) => setAuthEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-amber-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                </label>
+              </div>
+
+              {authEnabled && (
+                <div className="space-y-4 border-t border-gray-200 pt-4">
+                  {/* 인증 방식 선택 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">인증 방식</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { value: 'bearer', label: 'Bearer Token' },
+                        { value: 'jwt', label: 'JWT' },
+                        { value: 'apiKey', label: 'API Key' },
+                        { value: 'basic', label: 'Basic Auth' },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setAuthMethod(option.value as AuthMethod)}
+                          className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                            authMethod === option.value
+                              ? 'bg-amber-50 border-amber-500 text-amber-700'
+                              : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Bearer Token 설정 */}
+                  {authMethod === 'bearer' && (
+                    <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-4 mb-3">
+                        <label className="inline-flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={bearerAcceptAny}
+                            onChange={(e) => setBearerAcceptAny(e.target.checked)}
+                            className="w-4 h-4 text-amber-600 bg-gray-100 border-gray-300 rounded focus:ring-amber-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-700">모든 토큰 허용 (테스트용)</span>
+                        </label>
+                      </div>
+
+                      {!bearerAcceptAny && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              유효 토큰 목록
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setBearerTokens([...bearerTokens, ''])}
+                              className="text-sm text-amber-600 hover:text-amber-700"
+                            >
+                              + 토큰 추가
+                            </button>
+                          </div>
+                          <div className="space-y-2">
+                            {bearerTokens.map((token, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={token}
+                                  onChange={(e) => {
+                                    const newTokens = [...bearerTokens];
+                                    newTokens[index] = e.target.value;
+                                    setBearerTokens(newTokens);
+                                  }}
+                                  placeholder="my-secret-token"
+                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-sm"
+                                />
+                                {bearerTokens.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setBearerTokens(bearerTokens.filter((_, i) => i !== index))}
+                                    className="p-2 text-red-500 hover:bg-red-50 rounded"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-sm text-amber-800">
+                          <strong>예시 요청:</strong><br />
+                          <code className="text-xs bg-amber-100 px-1 rounded">
+                            Authorization: Bearer {bearerTokens[0] || 'your-token'}
+                          </code>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* JWT 설정 */}
+                  {authMethod === 'jwt' && (
+                    <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-4">
+                        <label className="inline-flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={jwtCheckExpiry}
+                            onChange={(e) => setJwtCheckExpiry(e.target.checked)}
+                            className="w-4 h-4 text-amber-600 bg-gray-100 border-gray-300 rounded focus:ring-amber-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-700">만료 시간 검증 (exp claim)</span>
+                        </label>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          필수 클레임 (쉼표로 구분)
+                        </label>
+                        <input
+                          type="text"
+                          value={jwtRequiredClaims}
+                          onChange={(e) => setJwtRequiredClaims(e.target.value)}
+                          placeholder="sub, email, name"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">비워두면 검증하지 않습니다</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          유효 발급자 (쉼표로 구분)
+                        </label>
+                        <input
+                          type="text"
+                          value={jwtValidIssuers}
+                          onChange={(e) => setJwtValidIssuers(e.target.value)}
+                          placeholder="https://auth.example.com, https://api.example.com"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-sm"
+                        />
+                      </div>
+
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-sm text-amber-800">
+                          <strong>참고:</strong> JWT 구조만 검증합니다 (서명은 검증하지 않음).
+                          테스트/개발 환경용으로 적합합니다.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* API Key 설정 */}
+                  {authMethod === 'apiKey' && (
+                    <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          헤더 이름
+                        </label>
+                        <input
+                          type="text"
+                          value={apiKeyHeaderName}
+                          onChange={(e) => setApiKeyHeaderName(e.target.value)}
+                          placeholder="X-API-Key"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm font-medium text-gray-700">
+                            유효 API Key 목록
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setApiKeyValidKeys([...apiKeyValidKeys, ''])}
+                            className="text-sm text-amber-600 hover:text-amber-700"
+                          >
+                            + Key 추가
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {apiKeyValidKeys.map((key, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={key}
+                                onChange={(e) => {
+                                  const newKeys = [...apiKeyValidKeys];
+                                  newKeys[index] = e.target.value;
+                                  setApiKeyValidKeys(newKeys);
+                                }}
+                                placeholder="your-api-key-here"
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-sm"
+                              />
+                              {apiKeyValidKeys.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setApiKeyValidKeys(apiKeyValidKeys.filter((_, i) => i !== index))}
+                                  className="p-2 text-red-500 hover:bg-red-50 rounded"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-sm text-amber-800">
+                          <strong>예시 요청:</strong><br />
+                          <code className="text-xs bg-amber-100 px-1 rounded">
+                            {apiKeyHeaderName || 'X-API-Key'}: {apiKeyValidKeys[0] || 'your-api-key'}
+                          </code>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Basic Auth 설정 */}
+                  {authMethod === 'basic' && (
+                    <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm font-medium text-gray-700">
+                            유효 자격 증명
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setBasicAuthCredentials([...basicAuthCredentials, { username: '', password: '' }])}
+                            className="text-sm text-amber-600 hover:text-amber-700"
+                          >
+                            + 자격 증명 추가
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {basicAuthCredentials.map((cred, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={cred.username}
+                                onChange={(e) => {
+                                  const newCreds = [...basicAuthCredentials];
+                                  newCreds[index].username = e.target.value;
+                                  setBasicAuthCredentials(newCreds);
+                                }}
+                                placeholder="username"
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                              />
+                              <span className="text-gray-400">:</span>
+                              <input
+                                type="password"
+                                value={cred.password}
+                                onChange={(e) => {
+                                  const newCreds = [...basicAuthCredentials];
+                                  newCreds[index].password = e.target.value;
+                                  setBasicAuthCredentials(newCreds);
+                                }}
+                                placeholder="password"
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                              />
+                              {basicAuthCredentials.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setBasicAuthCredentials(basicAuthCredentials.filter((_, i) => i !== index))}
+                                  className="p-2 text-red-500 hover:bg-red-50 rounded"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-sm text-amber-800">
+                          <strong>예시 요청:</strong><br />
+                          <code className="text-xs bg-amber-100 px-1 rounded">
+                            Authorization: Basic {basicAuthCredentials[0]?.username ? btoa(`${basicAuthCredentials[0].username}:${basicAuthCredentials[0].password}`) : 'base64(username:password)'}
+                          </code>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-sm text-amber-800">
+                      <strong>참고:</strong> 인증 실패 시 401 Unauthorized 응답이 반환됩니다.
+                      인증이 활성화되면 다른 응답 설정보다 먼저 검증됩니다.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Rate Limiting 설정 */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <Timer className="w-5 h-5" />
+                    Rate Limiting
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    요청 속도를 제한하여 API 과부하를 시뮬레이션합니다.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rateLimitEnabled}
+                    onChange={(e) => setRateLimitEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                </label>
+              </div>
+
+              {rateLimitEnabled && (
+                <div className="space-y-4 border-t border-gray-200 pt-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        요청 수 제한
+                      </label>
+                      <input
+                        type="number"
+                        value={rateLimitRequests}
+                        onChange={(e) => setRateLimitRequests(Number(e.target.value))}
+                        min="1"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        시간 창당 최대 요청 수
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        시간 창 (초)
+                      </label>
+                      <input
+                        type="number"
+                        value={rateLimitWindow}
+                        onChange={(e) => setRateLimitWindow(Number(e.target.value))}
+                        min="1"
+                        max="3600"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        기본값: 60초
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        버스트 허용
+                      </label>
+                      <input
+                        type="number"
+                        value={rateLimitBurst}
+                        onChange={(e) => setRateLimitBurst(Number(e.target.value))}
+                        min="0"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        한도 초과 허용 수 (0=없음)
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        제한 기준
+                      </label>
+                      <select
+                        value={rateLimitKeyBy}
+                        onChange={(e) => setRateLimitKeyBy(e.target.value as RateLimitKeyBy)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                      >
+                        <option value="ip">IP 주소</option>
+                        <option value="header">헤더 값</option>
+                        <option value="query">쿼리 파라미터</option>
+                      </select>
+                    </div>
+
+                    {rateLimitKeyBy !== 'ip' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {rateLimitKeyBy === 'header' ? '헤더 이름' : '파라미터 이름'}
+                        </label>
+                        <input
+                          type="text"
+                          value={rateLimitKeyName}
+                          onChange={(e) => setRateLimitKeyName(e.target.value)}
+                          placeholder={rateLimitKeyBy === 'header' ? 'X-User-ID' : 'user_id'}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 font-mono text-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-800">
+                      <strong>설정 요약:</strong> {rateLimitKeyBy === 'ip' ? 'IP 주소' : rateLimitKeyBy === 'header' ? `헤더 "${rateLimitKeyName}"` : `쿼리 "${rateLimitKeyName}"`} 기준으로{' '}
+                      {rateLimitWindow}초당 최대 {rateLimitRequests}회 요청 허용
+                      {rateLimitBurst > 0 && ` (+${rateLimitBurst}회 버스트)`}.
+                      초과 시 <code className="bg-red-100 px-1 rounded">429 Too Many Requests</code> 응답.
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>응답 헤더:</strong> <code className="bg-blue-100 px-1 rounded">X-RateLimit-Limit</code>,{' '}
+                      <code className="bg-blue-100 px-1 rounded">X-RateLimit-Remaining</code>,{' '}
+                      <code className="bg-blue-100 px-1 rounded">X-RateLimit-Reset</code>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 환경별 오버라이드 설정 */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <Layers className="w-5 h-5" />
+                    환경별 응답
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    dev/staging/prod 환경에 따라 다른 응답을 반환합니다.
+                  </p>
+                </div>
+                {!envSettingsEnabled && (
+                  <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded">
+                    비활성화됨
+                  </span>
+                )}
+              </div>
+
+              {!envSettingsEnabled ? (
+                <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                  <p className="text-sm text-gray-600">
+                    환경 기능이 비활성화되어 있습니다.{' '}
+                    <span className="text-blue-600">
+                      환경 설정에서 활성화하세요.
+                    </span>
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {environments.map((env) => {
+                    const override = environmentOverrides[env.name] || {};
+                    const isEnabled = override.enabled !== false;
+
+                    return (
+                      <div
+                        key={env.name}
+                        className={`border rounded-lg p-4 ${
+                          isEnabled ? 'border-gray-300' : 'border-gray-200 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: env.color || '#666' }}
+                            />
+                            <span className="font-medium text-gray-900">
+                              {env.displayName}
+                            </span>
+                            {env.isDefault && (
+                              <span className="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">
+                                기본
+                              </span>
+                            )}
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isEnabled}
+                              onChange={(e) => {
+                                setEnvironmentOverrides({
+                                  ...environmentOverrides,
+                                  [env.name]: {
+                                    ...override,
+                                    enabled: e.target.checked,
+                                  },
+                                });
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
+                          </label>
+                        </div>
+
+                        {isEnabled && (
+                          <div className="space-y-3 pt-3 border-t border-gray-200">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  상태 코드 (선택)
+                                </label>
+                                <input
+                                  type="number"
+                                  value={override.responseStatus || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value ? Number(e.target.value) : undefined;
+                                    setEnvironmentOverrides({
+                                      ...environmentOverrides,
+                                      [env.name]: {
+                                        ...override,
+                                        responseStatus: val,
+                                      },
+                                    });
+                                  }}
+                                  placeholder="기본값 사용"
+                                  min="100"
+                                  max="599"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  지연 (ms, 선택)
+                                </label>
+                                <input
+                                  type="number"
+                                  value={typeof override.delay === 'number' ? override.delay : ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value ? Number(e.target.value) : undefined;
+                                    setEnvironmentOverrides({
+                                      ...environmentOverrides,
+                                      [env.name]: {
+                                        ...override,
+                                        delay: val,
+                                      },
+                                    });
+                                  }}
+                                  placeholder="기본값 사용"
+                                  min="0"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                응답 데이터 (JSON, 선택)
+                              </label>
+                              <textarea
+                                value={
+                                  override.responseData !== undefined
+                                    ? typeof override.responseData === 'string'
+                                      ? override.responseData
+                                      : JSON.stringify(override.responseData, null, 2)
+                                    : ''
+                                }
+                                onChange={(e) => {
+                                  let val: any = e.target.value || undefined;
+                                  if (e.target.value) {
+                                    try {
+                                      val = JSON.parse(e.target.value);
+                                    } catch {
+                                      val = e.target.value;
+                                    }
+                                  }
+                                  setEnvironmentOverrides({
+                                    ...environmentOverrides,
+                                    [env.name]: {
+                                      ...override,
+                                      responseData: val,
+                                    },
+                                  });
+                                }}
+                                placeholder="비워두면 기본 응답 사용"
+                                rows={3}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>사용법:</strong> 요청 시{' '}
+                      <code className="bg-blue-100 px-1 rounded">X-Mock-Environment: {'{env}'}</code>{' '}
+                      헤더 또는 <code className="bg-blue-100 px-1 rounded">?mock_env={'{env}'}</code>{' '}
+                      쿼리 파라미터로 환경을 지정합니다.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* 저장 버튼 */}
             <div className="flex gap-3">
               <button
@@ -1012,6 +2292,318 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
                       )}
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* 프록시 설정 (View Mode) */}
+            {endpoint.proxyConfig?.enabled && (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <Globe className="w-5 h-5" />
+                  프록시 모드
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700">
+                    활성화
+                  </span>
+                </h3>
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <label className="block text-gray-500">대상 URL</label>
+                    <span className="text-gray-900 font-mono break-all">
+                      {endpoint.proxyConfig.targetUrl}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-gray-500">타임아웃</label>
+                    <span className="text-gray-900">{endpoint.proxyConfig.timeout || 30000}ms</span>
+                  </div>
+                  <div>
+                    <label className="block text-gray-500">응답 캐싱</label>
+                    <span className="text-gray-900">
+                      {endpoint.proxyConfig.cacheResponse
+                        ? `활성화 (TTL: ${endpoint.proxyConfig.cacheTtl || 300}초)`
+                        : '비활성화'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    이 엔드포인트로 들어오는 요청은 <code className="bg-blue-100 px-1 rounded">{endpoint.proxyConfig.targetUrl}{endpoint.path}</code>로 전달됩니다.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 시나리오 설정 (View Mode) */}
+            {endpoint.scenarioConfig?.enabled && (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <Play className="w-5 h-5" />
+                    시나리오 모드
+                    <span className="px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700">
+                      {endpoint.scenarioConfig.mode === 'sequential' ? '순차' :
+                       endpoint.scenarioConfig.mode === 'random' ? '랜덤' : '가중치'}
+                    </span>
+                  </h3>
+                  <button
+                    onClick={resetScenarioCounter}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 rounded-lg"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    카운터 리셋
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 text-sm mb-4">
+                  <div>
+                    <label className="block text-gray-500">응답 수</label>
+                    <span className="text-gray-900">{endpoint.scenarioConfig.responses?.length || 0}개</span>
+                  </div>
+                  {endpoint.scenarioConfig.mode === 'sequential' && (
+                    <div>
+                      <label className="block text-gray-500">반복</label>
+                      <span className="text-gray-900">{endpoint.scenarioConfig.loop ? '활성화' : '비활성화'}</span>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-gray-500">자동 리셋</label>
+                    <span className="text-gray-900">
+                      {endpoint.scenarioConfig.resetAfter
+                        ? `${endpoint.scenarioConfig.resetAfter}초 후`
+                        : '없음'}
+                    </span>
+                  </div>
+                </div>
+
+                {endpoint.scenarioConfig.responses && endpoint.scenarioConfig.responses.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-500">시나리오 응답 목록</label>
+                    {endpoint.scenarioConfig.responses.map((sr, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg"
+                      >
+                        <span className="font-mono text-sm bg-purple-200 text-purple-800 px-2 py-0.5 rounded">
+                          #{endpoint.scenarioConfig?.mode === 'sequential' ? sr.order || index + 1 : index + 1}
+                        </span>
+                        <span className="flex-1 text-gray-900">{sr.name || `응답 ${index + 1}`}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                          sr.responseStatus >= 200 && sr.responseStatus < 300
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}>
+                          {sr.responseStatus}
+                        </span>
+                        {endpoint.scenarioConfig?.mode === 'weighted' && (
+                          <span className="text-xs text-gray-500">가중치: {sr.weight || 1}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 인증 설정 (View Mode) */}
+            {endpoint.authConfig?.enabled && (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <Shield className="w-5 h-5" />
+                  인증 시뮬레이션
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-700">
+                    {endpoint.authConfig.method === 'bearer' ? 'Bearer Token' :
+                     endpoint.authConfig.method === 'jwt' ? 'JWT' :
+                     endpoint.authConfig.method === 'apiKey' ? 'API Key' : 'Basic Auth'}
+                  </span>
+                </h3>
+
+                <div className="text-sm space-y-3">
+                  {endpoint.authConfig.method === 'bearer' && endpoint.authConfig.bearerConfig && (
+                    <div>
+                      {endpoint.authConfig.bearerConfig.acceptAny ? (
+                        <p className="text-gray-600">모든 Bearer 토큰 허용</p>
+                      ) : (
+                        <div>
+                          <label className="block text-gray-500 mb-1">유효 토큰</label>
+                          <div className="flex flex-wrap gap-2">
+                            {endpoint.authConfig.bearerConfig.validTokens?.map((token, i) => (
+                              <code key={i} className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
+                                {token.substring(0, 20)}...
+                              </code>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {endpoint.authConfig.method === 'jwt' && endpoint.authConfig.jwtConfig && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-gray-500">만료 검증</label>
+                        <span className="text-gray-900">
+                          {endpoint.authConfig.jwtConfig.checkExpiry ? '활성화' : '비활성화'}
+                        </span>
+                      </div>
+                      {endpoint.authConfig.jwtConfig.requiredClaims?.length > 0 && (
+                        <div>
+                          <label className="block text-gray-500">필수 클레임</label>
+                          <span className="text-gray-900">
+                            {endpoint.authConfig.jwtConfig.requiredClaims.join(', ')}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {endpoint.authConfig.method === 'apiKey' && endpoint.authConfig.apiKeyConfig && (
+                    <div>
+                      <div className="mb-2">
+                        <label className="block text-gray-500">헤더 이름</label>
+                        <code className="text-gray-900 font-mono">
+                          {endpoint.authConfig.apiKeyConfig.headerName || 'X-API-Key'}
+                        </code>
+                      </div>
+                      <div>
+                        <label className="block text-gray-500 mb-1">유효 API Key ({endpoint.authConfig.apiKeyConfig.validKeys?.length || 0}개)</label>
+                        <div className="flex flex-wrap gap-2">
+                          {endpoint.authConfig.apiKeyConfig.validKeys?.slice(0, 3).map((key, i) => (
+                            <code key={i} className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
+                              {key.substring(0, 15)}...
+                            </code>
+                          ))}
+                          {(endpoint.authConfig.apiKeyConfig.validKeys?.length || 0) > 3 && (
+                            <span className="text-gray-500 text-xs">
+                              +{endpoint.authConfig.apiKeyConfig.validKeys!.length - 3}개 더
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {endpoint.authConfig.method === 'basic' && endpoint.authConfig.basicAuthConfig && (
+                    <div>
+                      <label className="block text-gray-500 mb-1">
+                        등록된 자격 증명 ({endpoint.authConfig.basicAuthConfig.credentials?.length || 0}개)
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {endpoint.authConfig.basicAuthConfig.credentials?.map((cred, i) => (
+                          <code key={i} className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
+                            {cred.username}:****
+                          </code>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm text-amber-800">
+                    유효하지 않은 인증 정보로 요청 시 <code className="bg-amber-100 px-1 rounded">401 Unauthorized</code> 응답이 반환됩니다.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Rate Limiting (View Mode) */}
+            {endpoint.rateLimitConfig?.enabled && (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <Timer className="w-5 h-5" />
+                  Rate Limiting
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">
+                    활성화
+                  </span>
+                </h3>
+
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <label className="block text-gray-500">요청 제한</label>
+                    <span className="text-gray-900 font-semibold">
+                      {endpoint.rateLimitConfig.requestsPerWindow}회 / {endpoint.rateLimitConfig.windowSeconds || 60}초
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-gray-500">버스트 허용</label>
+                    <span className="text-gray-900">
+                      {endpoint.rateLimitConfig.burstLimit || 0}회
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-gray-500">제한 기준</label>
+                    <span className="text-gray-900">
+                      {endpoint.rateLimitConfig.keyBy === 'ip'
+                        ? 'IP 주소'
+                        : endpoint.rateLimitConfig.keyBy === 'header'
+                        ? `헤더: ${endpoint.rateLimitConfig.keyName}`
+                        : `쿼리: ${endpoint.rateLimitConfig.keyName}`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-800">
+                    제한 초과 시 <code className="bg-red-100 px-1 rounded">429 Too Many Requests</code> 응답이 반환됩니다.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 환경별 응답 (View Mode) */}
+            {endpoint.environmentOverrides && Object.keys(endpoint.environmentOverrides).length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <Layers className="w-5 h-5" />
+                  환경별 응답
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700">
+                    {Object.keys(endpoint.environmentOverrides).filter(k => endpoint.environmentOverrides?.[k]?.enabled !== false).length}개 환경
+                  </span>
+                </h3>
+
+                <div className="space-y-3">
+                  {Object.entries(endpoint.environmentOverrides)
+                    .filter(([_, override]) => override?.enabled !== false)
+                    .map(([envName, override]) => {
+                      const env = environments.find(e => e.name === envName);
+                      return (
+                        <div
+                          key={envName}
+                          className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"
+                        >
+                          <div
+                            className="w-3 h-3 rounded-full mt-1 flex-shrink-0"
+                            style={{ backgroundColor: env?.color || '#666' }}
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900">
+                              {env?.displayName || envName}
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1 space-y-1">
+                              {override.responseStatus && (
+                                <div>상태: <span className="font-mono">{override.responseStatus}</span></div>
+                              )}
+                              {override.delay !== undefined && (
+                                <div>지연: <span className="font-mono">{typeof override.delay === 'number' ? `${override.delay}ms` : `${override.delay.min}~${override.delay.max}ms`}</span></div>
+                              )}
+                              {override.responseData !== undefined && (
+                                <div>응답: <span className="font-mono text-xs">{typeof override.responseData === 'string' ? override.responseData.substring(0, 50) : JSON.stringify(override.responseData).substring(0, 50)}...</span></div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                  <p className="text-sm text-purple-800">
+                    <code className="bg-purple-100 px-1 rounded">X-Mock-Environment</code> 헤더 또는{' '}
+                    <code className="bg-purple-100 px-1 rounded">mock_env</code> 쿼리로 환경을 지정하세요.
+                  </p>
                 </div>
               </div>
             )}

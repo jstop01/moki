@@ -7,6 +7,21 @@ export * from './types/log';
 // Import/Export types
 export * from './types/import-export';
 
+// WebSocket types
+export * from './types/websocket';
+
+// Auth types
+export * from './types/auth';
+
+// Team types
+export * from './types/team';
+
+// Environment types
+export * from './types/environment';
+
+// GraphQL types
+export * from './types/graphql';
+
 // Utility types
 export interface HealthCheck {
   status: 'ok' | 'error';

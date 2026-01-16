@@ -15,6 +15,14 @@ import { fileStore } from './FileStore';
 const MAX_HISTORY_PER_ENDPOINT = 50;
 
 /**
+ * Scenario counter entry
+ */
+interface ScenarioCounter {
+  count: number;
+  lastAccess: number; // timestamp
+}
+
+/**
  * In-memory storage for endpoints and logs
  * With file persistence support
  */
@@ -23,6 +31,7 @@ export class MemoryStore {
   private logs: RequestLog[] = [];
   private history: Map<string, ResponseHistory[]> = new Map();
   private autoSave: boolean = true;
+  private scenarioCounters: Map<string, ScenarioCounter> = new Map();
 
   // ============================================
   // FILE PERSISTENCE
@@ -458,6 +467,72 @@ export class MemoryStore {
    */
   clearAllHistory(): void {
     this.history.clear();
+  }
+
+  // ============================================
+  // SCENARIO COUNTER OPERATIONS
+  // ============================================
+
+  /**
+   * Get scenario counter for an endpoint, with auto-reset check
+   */
+  getScenarioCount(endpointId: string, resetAfter?: number): number {
+    const counter = this.scenarioCounters.get(endpointId);
+
+    if (!counter) {
+      return 0;
+    }
+
+    // Check if should reset based on time
+    if (resetAfter && resetAfter > 0) {
+      const elapsed = (Date.now() - counter.lastAccess) / 1000;
+      if (elapsed >= resetAfter) {
+        this.scenarioCounters.delete(endpointId);
+        return 0;
+      }
+    }
+
+    return counter.count;
+  }
+
+  /**
+   * Increment scenario counter for an endpoint
+   */
+  incrementScenarioCount(endpointId: string): number {
+    const counter = this.scenarioCounters.get(endpointId);
+
+    if (!counter) {
+      this.scenarioCounters.set(endpointId, {
+        count: 1,
+        lastAccess: Date.now(),
+      });
+      return 1;
+    }
+
+    counter.count++;
+    counter.lastAccess = Date.now();
+    return counter.count;
+  }
+
+  /**
+   * Reset scenario counter for an endpoint
+   */
+  resetScenarioCount(endpointId: string): void {
+    this.scenarioCounters.delete(endpointId);
+  }
+
+  /**
+   * Reset all scenario counters
+   */
+  resetAllScenarioCounters(): void {
+    this.scenarioCounters.clear();
+  }
+
+  /**
+   * Get all scenario counters (for debugging/admin)
+   */
+  getScenarioCounters(): Map<string, ScenarioCounter> {
+    return new Map(this.scenarioCounters);
   }
 }
 

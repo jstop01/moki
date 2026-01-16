@@ -1,7 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { memoryStore } from '../storage/MemoryStore';
-import { Endpoint, Condition, ConditionalResponse, DelayConfig } from '@mock-api-builder/shared';
+import { Endpoint, Condition, ConditionalResponse, DelayConfig, ScenarioConfig, ScenarioResponse } from '@mock-api-builder/shared';
 import { processTemplateVariables, extractPathParams } from '../utils/templateEngine';
+import { proxyRequest } from '../utils/proxyHandler';
+import { validateAuth, sendAuthError } from '../middleware/authSimulator';
+import { validateRateLimit, sendRateLimitError, setRateLimitHeaders } from '../middleware/rateLimiter';
+import { extractEnvironment, getEnvironmentOverride, applyEnvironmentOverride, isEnvironmentEnabled } from '../middleware/environmentHandler';
 
 /**
  * Calculate actual delay from DelayConfig (fixed or random range)
@@ -99,6 +103,69 @@ function findMatchingConditionalResponse(
 }
 
 /**
+ * Get scenario response based on mode and call count
+ */
+function getScenarioResponse(
+  endpointId: string,
+  scenarioConfig: ScenarioConfig
+): ScenarioResponse | null {
+  if (!scenarioConfig.enabled || !scenarioConfig.responses || scenarioConfig.responses.length === 0) {
+    return null;
+  }
+
+  const responses = scenarioConfig.responses;
+
+  // Get current count with auto-reset check
+  const currentCount = memoryStore.getScenarioCount(endpointId, scenarioConfig.resetAfter);
+
+  // Increment counter after getting current count
+  memoryStore.incrementScenarioCount(endpointId);
+
+  switch (scenarioConfig.mode) {
+    case 'sequential': {
+      // Sort by order if specified
+      const sorted = [...responses].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      let index = currentCount % sorted.length;
+
+      // If not looping and we've exceeded the count, return the last response
+      if (!scenarioConfig.loop && currentCount >= sorted.length) {
+        index = sorted.length - 1;
+      }
+
+      return sorted[index];
+    }
+
+    case 'random': {
+      const randomIndex = Math.floor(Math.random() * responses.length);
+      return responses[randomIndex];
+    }
+
+    case 'weighted': {
+      // Calculate total weight
+      const totalWeight = responses.reduce((sum, r) => sum + (r.weight ?? 1), 0);
+
+      // Generate random value
+      let random = Math.random() * totalWeight;
+
+      // Find matching response
+      for (const response of responses) {
+        random -= (response.weight ?? 1);
+        if (random <= 0) {
+          return response;
+        }
+      }
+
+      // Fallback to last response
+      return responses[responses.length - 1];
+    }
+
+    default:
+      return null;
+  }
+}
+
+/**
  * Handle all methods and paths under /mock/*
  * This is the core functionality - responding to user-defined mock endpoints
  */
@@ -142,13 +209,104 @@ router.all('/*', async (req: Request, res: Response) => {
     // Extract path parameters for template processing
     const pathParams = extractPathParams(endpoint.path, path);
 
-    // Check for conditional response first
-    const conditionalResponse = findMatchingConditionalResponse(endpoint, req);
+    // Check authentication if configured
+    const authResult = validateAuth(req, endpoint.authConfig);
+    if (!authResult.valid) {
+      // Log auth failure
+      memoryStore.addLog({
+        endpointId: endpoint.id,
+        method,
+        path,
+        url: req.originalUrl,
+        queryParams: req.query as Record<string, string>,
+        requestHeaders: req.headers as Record<string, string>,
+        requestBody: req.body,
+        responseStatus: 401,
+        responseData: { error: 'Unauthorized', message: authResult.error },
+        responseTime: Date.now() - startTime,
+        clientIp: req.ip,
+        userAgent: req.get('user-agent'),
+      });
 
-    // Determine which response to use
-    const responseStatus = conditionalResponse?.responseStatus ?? endpoint.responseStatus;
-    let responseData = conditionalResponse?.responseData ?? endpoint.responseData;
-    const delayConfig = conditionalResponse?.delay ?? endpoint.delay;
+      sendAuthError(res, authResult, endpoint.authConfig?.errorResponse);
+      return;
+    }
+
+    // Check rate limiting if configured
+    const rateLimitResult = validateRateLimit(req, endpoint.id, endpoint.rateLimitConfig || { enabled: false, requestsPerWindow: 100, keyBy: 'ip' });
+    if (!rateLimitResult.allowed) {
+      // Log rate limit exceeded
+      memoryStore.addLog({
+        endpointId: endpoint.id,
+        method,
+        path,
+        url: req.originalUrl,
+        queryParams: req.query as Record<string, string>,
+        requestHeaders: req.headers as Record<string, string>,
+        requestBody: req.body,
+        responseStatus: 429,
+        responseData: { error: 'Too Many Requests' },
+        responseTime: Date.now() - startTime,
+        clientIp: req.ip,
+        userAgent: req.get('user-agent'),
+      });
+
+      sendRateLimitError(res, rateLimitResult, endpoint.rateLimitConfig?.response);
+      return;
+    }
+
+    // Check if proxy mode is enabled
+    if (endpoint.proxyConfig?.enabled && endpoint.proxyConfig.targetUrl) {
+      const proxyResult = await proxyRequest(req, endpoint.proxyConfig, path);
+
+      const responseTime = Date.now() - startTime;
+
+      // Log the proxied request
+      memoryStore.addLog({
+        endpointId: endpoint.id,
+        method,
+        path,
+        url: req.originalUrl,
+        queryParams: req.query as Record<string, string>,
+        requestHeaders: req.headers as Record<string, string>,
+        requestBody: req.body,
+        responseStatus: proxyResult.status,
+        responseData: proxyResult.data,
+        responseTime,
+        clientIp: req.ip,
+        userAgent: req.get('user-agent'),
+      });
+
+      // Set response headers from proxy
+      Object.entries(proxyResult.headers).forEach(([key, value]) => {
+        res.setHeader(key, value);
+      });
+
+      return res.status(proxyResult.status).json(proxyResult.data);
+    }
+
+    // Extract environment from request
+    const environment = extractEnvironment(req);
+
+    // Get environment override if enabled
+    const envOverride = isEnvironmentEnabled() ? getEnvironmentOverride(endpoint, environment) : null;
+
+    // Apply environment override to get base response values
+    const envResponse = applyEnvironmentOverride(endpoint, envOverride);
+
+    // Check for scenario mode first (takes precedence over conditional responses)
+    let scenarioResponse: ScenarioResponse | null = null;
+    if (endpoint.scenarioConfig?.enabled) {
+      scenarioResponse = getScenarioResponse(endpoint.id, endpoint.scenarioConfig);
+    }
+
+    // Check for conditional response (only if no scenario response)
+    const conditionalResponse = scenarioResponse ? null : findMatchingConditionalResponse(endpoint, req);
+
+    // Determine which response to use (scenario > conditional > environment > default)
+    const responseStatus = scenarioResponse?.responseStatus ?? conditionalResponse?.responseStatus ?? envResponse.responseStatus;
+    let responseData = scenarioResponse?.responseData ?? conditionalResponse?.responseData ?? envResponse.responseData;
+    const delayConfig = scenarioResponse?.delay ?? conditionalResponse?.delay ?? envResponse.delay;
 
     // Process template variables in response data
     responseData = processTemplateVariables(responseData, req, pathParams);
@@ -183,6 +341,9 @@ router.all('/*', async (req: Request, res: Response) => {
         res.setHeader(key, value);
       });
     }
+
+    // Set rate limit headers on successful response
+    setRateLimitHeaders(res, rateLimitResult);
 
     // Send the response (conditional or default)
     res.status(responseStatus).json(responseData);

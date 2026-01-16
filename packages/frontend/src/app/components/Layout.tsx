@@ -1,16 +1,18 @@
 import { ReactNode } from 'react';
-import { Database, FileJson, History, Settings, PlayCircle, LayoutDashboard } from 'lucide-react';
+import { Database, FileJson, History, Settings, PlayCircle, LayoutDashboard, Zap, Code } from 'lucide-react';
 
 interface LayoutProps {
   children: ReactNode;
-  activeTab: 'dashboard' | 'endpoints' | 'logs' | 'import-export' | 'playground' | 'settings';
-  onTabChange: (tab: 'dashboard' | 'endpoints' | 'logs' | 'import-export' | 'playground' | 'settings') => void;
+  activeTab: 'dashboard' | 'endpoints' | 'logs' | 'import-export' | 'playground' | 'websocket' | 'graphql' | 'settings';
+  onTabChange: (tab: 'dashboard' | 'endpoints' | 'logs' | 'import-export' | 'playground' | 'websocket' | 'graphql' | 'settings') => void;
 }
 
 export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const tabs = [
     { id: 'dashboard' as const, label: '대시보드', icon: LayoutDashboard },
     { id: 'endpoints' as const, label: '엔드포인트', icon: Database },
+    { id: 'websocket' as const, label: 'WebSocket', icon: Zap },
+    { id: 'graphql' as const, label: 'GraphQL', icon: Code },
     { id: 'playground' as const, label: 'API 테스트', icon: PlayCircle },
     { id: 'logs' as const, label: '요청 로그', icon: History },
     { id: 'import-export' as const, label: '가져오기/내보내기', icon: FileJson },

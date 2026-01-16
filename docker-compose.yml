@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # Mock API Builder - All-in-one
+  mock-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mock-api-builder
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    volumes:
+      # Persist endpoint data
+      - mock-api-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/admin/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Nginx for serving frontend (if needed separately)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: mock-api-nginx
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./packages/frontend/dist:/usr/share/nginx/html:ro
+  #     - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+  #   depends_on:
+  #     - mock-api
+  #   restart: unless-stopped
+
+volumes:
+  mock-api-data:
+    name: mock-api-builder-data
