@@ -70,7 +70,7 @@ function processString(
   pathParams: Record<string, string>
 ): string {
   // Process all template variables in one pass
-  return str.replace(/\{\{\$([^}]+)\}\}/g, (match, expression) => {
+  return str.replace(/\{\{\$([^}]+)\}\}/g, (match: string, expression: string): string => {
     try {
       const trimmed = expression.trim();
       const parts = trimmed.split(/\s+/);

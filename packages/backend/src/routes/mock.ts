@@ -1,7 +1,22 @@
 import { Router, Request, Response } from 'express';
 import { memoryStore } from '../storage/MemoryStore';
-import { Endpoint, Condition, ConditionalResponse } from '@mock-api-builder/shared';
+import { Endpoint, Condition, ConditionalResponse, DelayConfig } from '@mock-api-builder/shared';
 import { processTemplateVariables, extractPathParams } from '../utils/templateEngine';
+
+/**
+ * Calculate actual delay from DelayConfig (fixed or random range)
+ */
+function calculateDelay(delay: DelayConfig | undefined): number {
+  if (!delay) return 0;
+
+  if (typeof delay === 'number') {
+    return delay;
+  }
+
+  // Random range: { min, max }
+  const { min, max } = delay;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
 const router = Router();
 
@@ -133,14 +148,15 @@ router.all('/*', async (req: Request, res: Response) => {
     // Determine which response to use
     const responseStatus = conditionalResponse?.responseStatus ?? endpoint.responseStatus;
     let responseData = conditionalResponse?.responseData ?? endpoint.responseData;
-    const delay = conditionalResponse?.delay ?? endpoint.delay;
+    const delayConfig = conditionalResponse?.delay ?? endpoint.delay;
 
     // Process template variables in response data
     responseData = processTemplateVariables(responseData, req, pathParams);
 
-    // Simulate delay if configured
-    if (delay && delay > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delay));
+    // Simulate delay if configured (supports fixed or random range)
+    const actualDelay = calculateDelay(delayConfig);
+    if (actualDelay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, actualDelay));
     }
 
     const responseTime = Date.now() - startTime;

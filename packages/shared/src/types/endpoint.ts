@@ -4,6 +4,11 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
 
 /**
+ * Delay configuration - can be fixed or random range
+ */
+export type DelayConfig = number | { min: number; max: number };
+
+/**
  * Status of an endpoint (for future features like enable/disable)
  */
 export type EndpointStatus = 'active' | 'inactive';
@@ -46,8 +51,8 @@ export interface ConditionalResponse {
   /** Response data when conditions match */
   responseData: any;
 
-  /** Optional delay for this specific response */
-  delay?: number;
+  /** Optional delay for this specific response (fixed or random range) */
+  delay?: DelayConfig;
 }
 
 /**
@@ -72,8 +77,8 @@ export interface Endpoint {
   /** Custom response headers */
   responseHeaders?: Record<string, string>;
   
-  /** Simulated delay in milliseconds */
-  delay?: number;
+  /** Simulated delay in milliseconds (fixed or random range) */
+  delay?: DelayConfig;
 
   /** Conditional responses based on query params, headers, or body */
   conditionalResponses?: ConditionalResponse[];
@@ -103,7 +108,7 @@ export interface CreateEndpointDto {
   responseStatus: number;
   responseData: any;
   responseHeaders?: Record<string, string>;
-  delay?: number;
+  delay?: DelayConfig;
   conditionalResponses?: ConditionalResponse[];
   description?: string;
   status?: EndpointStatus;
@@ -119,7 +124,7 @@ export interface UpdateEndpointDto {
   responseStatus?: number;
   responseData?: any;
   responseHeaders?: Record<string, string>;
-  delay?: number;
+  delay?: DelayConfig;
   conditionalResponses?: ConditionalResponse[];
   description?: string;
   status?: EndpointStatus;

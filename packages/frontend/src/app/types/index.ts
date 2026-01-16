@@ -1,5 +1,8 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
+// 지연 설정 (고정 또는 랜덤 범위)
+export type DelayConfig = number | { min: number; max: number };
+
 // 조건 연산자 타입
 export type ConditionOperator = 'eq' | 'neq' | 'contains' | 'startsWith' | 'endsWith' | 'regex' | 'exists';
 
@@ -17,7 +20,7 @@ export interface ConditionalResponse {
   conditions: Condition[];
   responseStatus: number;
   responseData: any;
-  delay?: number;
+  delay?: DelayConfig;
 }
 
 export interface Endpoint {
@@ -36,7 +39,7 @@ export interface EndpointWithResponse extends Endpoint {
   responseStatus?: number;
   responseData?: any;
   responseHeaders?: Record<string, string>;
-  delay?: number;
+  delay?: DelayConfig;
   conditionalResponses?: ConditionalResponse[];
 }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Edit, Trash2, Copy, Code, Loader2, Save, ChevronDown, ChevronUp, GitBranch, HelpCircle, Sparkles } from 'lucide-react';
-import { HttpMethod, Condition, ConditionalResponse, EndpointWithResponse, ConditionOperator } from '@/app/types';
+import { HttpMethod, Condition, ConditionalResponse, EndpointWithResponse, ConditionOperator, DelayConfig } from '@/app/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -106,7 +106,10 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
   const [editPath, setEditPath] = useState('');
   const [editMethod, setEditMethod] = useState<HttpMethod>('GET');
   const [editStatus, setEditStatus] = useState(200);
-  const [editDelay, setEditDelay] = useState(0);
+  const [editDelayMode, setEditDelayMode] = useState<'fixed' | 'random'>('fixed');
+  const [editDelayFixed, setEditDelayFixed] = useState(0);
+  const [editDelayMin, setEditDelayMin] = useState(0);
+  const [editDelayMax, setEditDelayMax] = useState(1000);
   const [editResponseBody, setEditResponseBody] = useState('');
 
   // Conditional responses state
@@ -143,7 +146,18 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
         setEditPath(mappedEndpoint.path);
         setEditMethod(mappedEndpoint.method);
         setEditStatus(mappedEndpoint.responseStatus || 200);
-        setEditDelay(mappedEndpoint.delay || 0);
+        // Initialize delay (fixed or random)
+        if (mappedEndpoint.delay && typeof mappedEndpoint.delay === 'object') {
+          setEditDelayMode('random');
+          setEditDelayMin(mappedEndpoint.delay.min);
+          setEditDelayMax(mappedEndpoint.delay.max);
+          setEditDelayFixed(0);
+        } else {
+          setEditDelayMode('fixed');
+          setEditDelayFixed(typeof mappedEndpoint.delay === 'number' ? mappedEndpoint.delay : 0);
+          setEditDelayMin(0);
+          setEditDelayMax(1000);
+        }
         setEditResponseBody(
           typeof mappedEndpoint.responseData === 'string'
             ? mappedEndpoint.responseData
@@ -191,6 +205,11 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
             : cr.responseData,
       }));
 
+      // Prepare delay config
+      const delayConfig: DelayConfig = editDelayMode === 'random'
+        ? { min: editDelayMin, max: editDelayMax }
+        : editDelayFixed;
+
       const res = await fetch(`${API_URL}/api/admin/endpoints/${endpointId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -200,7 +219,7 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
           method: editMethod,
           responseStatus: editStatus,
           responseData,
-          delay: editDelay,
+          delay: delayConfig,
           conditionalResponses: parsedConditionalResponses,
         }),
       });
@@ -433,13 +452,59 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">지연 시간 (ms)</label>
-                    <input
-                      type="number"
-                      value={editDelay}
-                      onChange={(e) => setEditDelay(Number(e.target.value))}
-                      min="0"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditDelayMode('fixed')}
+                        className={`flex-1 px-3 py-1.5 text-sm rounded-lg border ${
+                          editDelayMode === 'fixed'
+                            ? 'bg-blue-50 border-blue-500 text-blue-700'
+                            : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        고정
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditDelayMode('random')}
+                        className={`flex-1 px-3 py-1.5 text-sm rounded-lg border ${
+                          editDelayMode === 'random'
+                            ? 'bg-blue-50 border-blue-500 text-blue-700'
+                            : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        랜덤 범위
+                      </button>
+                    </div>
+                    {editDelayMode === 'fixed' ? (
+                      <input
+                        type="number"
+                        value={editDelayFixed}
+                        onChange={(e) => setEditDelayFixed(Number(e.target.value))}
+                        min="0"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={editDelayMin}
+                          onChange={(e) => setEditDelayMin(Number(e.target.value))}
+                          min="0"
+                          placeholder="Min"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-500">~</span>
+                        <input
+                          type="number"
+                          value={editDelayMax}
+                          onChange={(e) => setEditDelayMax(Number(e.target.value))}
+                          min="0"
+                          placeholder="Max"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -661,17 +726,79 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
                               <label className="block text-sm font-medium text-gray-700 mb-2">
                                 지연 시간 (ms)
                               </label>
-                              <input
-                                type="number"
-                                value={cr.delay || 0}
-                                onChange={(e) =>
-                                  updateConditionalResponse(crIndex, {
-                                    delay: Number(e.target.value),
-                                  })
-                                }
-                                min="0"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
+                              <div className="flex gap-2 mb-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateConditionalResponse(crIndex, {
+                                      delay: typeof cr.delay === 'object' ? cr.delay.min : (cr.delay || 0),
+                                    })
+                                  }
+                                  className={`flex-1 px-2 py-1 text-xs rounded-lg border ${
+                                    typeof cr.delay !== 'object'
+                                      ? 'bg-blue-50 border-blue-500 text-blue-700'
+                                      : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  고정
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateConditionalResponse(crIndex, {
+                                      delay: { min: typeof cr.delay === 'number' ? cr.delay : 0, max: 1000 },
+                                    })
+                                  }
+                                  className={`flex-1 px-2 py-1 text-xs rounded-lg border ${
+                                    typeof cr.delay === 'object'
+                                      ? 'bg-blue-50 border-blue-500 text-blue-700'
+                                      : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  랜덤
+                                </button>
+                              </div>
+                              {typeof cr.delay !== 'object' ? (
+                                <input
+                                  type="number"
+                                  value={typeof cr.delay === 'number' ? cr.delay : 0}
+                                  onChange={(e) =>
+                                    updateConditionalResponse(crIndex, {
+                                      delay: Number(e.target.value),
+                                    })
+                                  }
+                                  min="0"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    value={cr.delay.min}
+                                    onChange={(e) =>
+                                      updateConditionalResponse(crIndex, {
+                                        delay: { ...cr.delay as { min: number; max: number }, min: Number(e.target.value) },
+                                      })
+                                    }
+                                    min="0"
+                                    placeholder="Min"
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  />
+                                  <span className="text-gray-500">~</span>
+                                  <input
+                                    type="number"
+                                    value={cr.delay.max}
+                                    onChange={(e) =>
+                                      updateConditionalResponse(crIndex, {
+                                        delay: { ...cr.delay as { min: number; max: number }, max: Number(e.target.value) },
+                                      })
+                                    }
+                                    min="0"
+                                    placeholder="Max"
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  />
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -748,7 +875,13 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">지연 시간</label>
-                  <span className="text-gray-900">{endpoint.delay || 0}ms</span>
+                  <span className="text-gray-900">
+                    {endpoint.delay
+                      ? typeof endpoint.delay === 'object'
+                        ? `${endpoint.delay.min}~${endpoint.delay.max}ms (랜덤)`
+                        : `${endpoint.delay}ms`
+                      : '0ms'}
+                  </span>
                 </div>
               </div>
 
