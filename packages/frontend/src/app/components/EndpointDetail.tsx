@@ -1,8 +1,78 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Edit, Trash2, Copy, Code, Loader2, Save, ChevronDown, ChevronUp, GitBranch } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, Trash2, Copy, Code, Loader2, Save, ChevronDown, ChevronUp, GitBranch, HelpCircle, Sparkles } from 'lucide-react';
 import { HttpMethod, Condition, ConditionalResponse, EndpointWithResponse, ConditionOperator } from '@/app/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+// Template Variables for Dynamic Responses
+const TEMPLATE_VARIABLES = [
+  { name: '{{$timestamp}}', desc: 'Unix timestamp (ms)' },
+  { name: '{{$isoDate}}', desc: 'ISO 8601 날짜' },
+  { name: '{{$uuid}}', desc: 'UUID v4' },
+  { name: '{{$randomInt}}', desc: '랜덤 정수 0-1000' },
+  { name: '{{$randomInt min max}}', desc: '범위 지정 랜덤' },
+  { name: '{{$randomFloat}}', desc: '랜덤 실수 0-1' },
+  { name: '{{$randomString n}}', desc: 'n자리 랜덤 문자열' },
+  { name: '{{$randomEmail}}', desc: '랜덤 이메일' },
+  { name: '{{$randomName}}', desc: '랜덤 이름' },
+  { name: '{{$randomBoolean}}', desc: '랜덤 true/false' },
+  { name: '{{$request.query.xxx}}', desc: '쿼리 파라미터' },
+  { name: '{{$request.header.xxx}}', desc: '요청 헤더' },
+  { name: '{{$request.body.xxx}}', desc: '바디 필드 (중첩: user.name)' },
+  { name: '{{$request.path.xxx}}', desc: '경로 파라미터' },
+];
+
+// Template Variables Helper Component
+function TemplateVariablesHelper() {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+      >
+        <Sparkles className="w-4 h-4" />
+        동적 변수
+      </button>
+      {isOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-10"
+            onClick={() => setIsOpen(false)}
+          />
+          <div className="absolute right-0 top-8 z-20 w-80 bg-white border border-gray-200 rounded-lg shadow-lg">
+            <div className="p-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+              <p className="font-semibold text-gray-900 text-sm">템플릿 변수</p>
+              <p className="text-xs text-gray-500 mt-1">
+                클릭하여 복사 - Response Body에서 동적 값 생성
+              </p>
+            </div>
+            <div className="max-h-64 overflow-y-auto p-2">
+              {TEMPLATE_VARIABLES.map((v, i) => (
+                <div
+                  key={i}
+                  className="p-2 hover:bg-blue-50 rounded cursor-pointer transition-colors"
+                  onClick={() => {
+                    navigator.clipboard.writeText(v.name);
+                    setIsOpen(false);
+                  }}
+                  title="클릭하여 복사"
+                >
+                  <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-blue-600 font-mono">
+                    {v.name}
+                  </code>
+                  <p className="text-xs text-gray-500 mt-0.5">{v.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 interface EndpointDetailProps {
   endpointId: string;
@@ -374,11 +444,22 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">응답 Body (JSON)</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">응답 Body (JSON)</label>
+                    <TemplateVariablesHelper />
+                  </div>
                   <textarea
                     value={editResponseBody}
                     onChange={(e) => setEditResponseBody(e.target.value)}
                     rows={8}
+                    placeholder={`{
+  "id": "{{$uuid}}",
+  "timestamp": "{{$isoDate}}",
+  "data": {
+    "name": "{{$randomName}}",
+    "email": "{{$randomEmail}}"
+  }
+}`}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
                   />
                 </div>
@@ -595,9 +676,12 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
                           </div>
 
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              응답 Body (JSON)
-                            </label>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="block text-sm font-medium text-gray-700">
+                                응답 Body (JSON)
+                              </label>
+                              <TemplateVariablesHelper />
+                            </div>
                             <textarea
                               value={
                                 typeof cr.responseData === 'string'

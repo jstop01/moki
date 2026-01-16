@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { memoryStore } from '../storage/MemoryStore';
 import { Endpoint, Condition, ConditionalResponse } from '@mock-api-builder/shared';
+import { processTemplateVariables, extractPathParams } from '../utils/templateEngine';
 
 const router = Router();
 
@@ -123,13 +124,19 @@ router.all('/*', async (req: Request, res: Response) => {
       });
     }
 
+    // Extract path parameters for template processing
+    const pathParams = extractPathParams(endpoint.path, path);
+
     // Check for conditional response first
     const conditionalResponse = findMatchingConditionalResponse(endpoint, req);
 
     // Determine which response to use
     const responseStatus = conditionalResponse?.responseStatus ?? endpoint.responseStatus;
-    const responseData = conditionalResponse?.responseData ?? endpoint.responseData;
+    let responseData = conditionalResponse?.responseData ?? endpoint.responseData;
     const delay = conditionalResponse?.delay ?? endpoint.delay;
+
+    // Process template variables in response data
+    responseData = processTemplateVariables(responseData, req, pathParams);
 
     // Simulate delay if configured
     if (delay && delay > 0) {
