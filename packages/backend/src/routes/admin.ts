@@ -10,6 +10,7 @@ import {
   ImportResult,
   MOCK_API_VERSION,
 } from '@mock-api-builder/shared';
+import { parseOpenApiSpec, validateOpenApiSpec } from '../utils/openApiParser';
 
 const router = Router();
 
@@ -345,6 +346,90 @@ router.post('/import', (req: Request, res: Response) => {
       success: true,
       data: result,
       message: `Imported ${result.imported} endpoints, skipped ${result.skipped}`,
+    };
+    res.json(response);
+  } catch (error: any) {
+    const response: ApiResponse<null> = {
+      success: false,
+      error: error.message,
+    };
+    res.status(500).json(response);
+  }
+});
+
+/**
+ * POST /api/admin/import/openapi
+ * Import from OpenAPI/Swagger spec
+ */
+router.post('/import/openapi', (req: Request, res: Response) => {
+  try {
+    const spec = req.body;
+    const options: ImportOptions = {
+      replace: req.query.replace === 'true',
+      skipInvalid: req.query.skipInvalid === 'true',
+    };
+
+    // Validate the spec
+    const validation = validateOpenApiSpec(spec);
+    if (!validation.valid) {
+      const response: ApiResponse<null> = {
+        success: false,
+        error: validation.error,
+      };
+      return res.status(400).json(response);
+    }
+
+    // Parse the spec to endpoints
+    const endpointDtos = parseOpenApiSpec(spec);
+
+    if (endpointDtos.length === 0) {
+      const response: ApiResponse<null> = {
+        success: false,
+        error: 'No endpoints found in the OpenAPI spec',
+      };
+      return res.status(400).json(response);
+    }
+
+    const result: ImportResult = {
+      imported: 0,
+      skipped: 0,
+      errors: [],
+      importedIds: [],
+    };
+
+    for (const dto of endpointDtos) {
+      try {
+        // Check if endpoint with same method and path exists
+        const existing = memoryStore
+          .getAllEndpoints()
+          .find((ep) => ep.method === dto.method && ep.path === dto.path);
+
+        if (existing && !options.replace) {
+          result.skipped++;
+          continue;
+        }
+
+        if (existing && options.replace) {
+          memoryStore.deleteEndpoint(existing.id);
+        }
+
+        const created = memoryStore.createEndpoint(dto);
+        result.imported++;
+        result.importedIds.push(created.id);
+      } catch (error: any) {
+        if (options.skipInvalid) {
+          result.skipped++;
+          result.errors.push(`Failed to import ${dto.method} ${dto.path}: ${error.message}`);
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    const response: ApiResponse<ImportResult & { specVersion?: string }> = {
+      success: true,
+      data: { ...result, specVersion: validation.version },
+      message: `Imported ${result.imported} endpoints from OpenAPI ${validation.version}, skipped ${result.skipped}`,
     };
     res.json(response);
   } catch (error: any) {
