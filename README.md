@@ -153,8 +153,8 @@ VITE_API_URL=http://your-server-ip:3001
 ### 배포 설정
 `bin/deploy.sh`에서 서버 정보 수정:
 ```bash
-REMOTE_USER="was"
-REMOTE_HOST="10.254.241.251"
+REMOTE_USER="your-username"
+REMOTE_HOST="your-ip"
 REMOTE_PATH="/home/was/moki"
 REMOTE_PASS="your-password"
 ```
