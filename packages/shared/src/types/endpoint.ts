@@ -132,6 +132,22 @@ export interface UpdateEndpointDto {
 }
 
 /**
+ * Response History - tracks changes to endpoints
+ */
+export interface ResponseHistory {
+  id: string;
+  endpointId: string;
+  timestamp: Date;
+  action: 'create' | 'update' | 'delete';
+  changes: {
+    field: string;
+    oldValue: any;
+    newValue: any;
+  }[];
+  snapshot: Partial<Endpoint>;
+}
+
+/**
  * Response wrapper for API operations
  */
 export interface ApiResponse<T> {

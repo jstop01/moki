@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Edit, Trash2, Copy, Code, Loader2, Save, ChevronDown, ChevronUp, GitBranch, HelpCircle, Sparkles } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, Trash2, Copy, Code, Loader2, Save, ChevronDown, ChevronUp, GitBranch, HelpCircle, Sparkles, History, RotateCcw } from 'lucide-react';
 import { HttpMethod, Condition, ConditionalResponse, EndpointWithResponse, ConditionOperator, DelayConfig } from '@/app/types';
+
+interface ResponseHistory {
+  id: string;
+  endpointId: string;
+  timestamp: string;
+  action: 'create' | 'update' | 'delete';
+  changes: { field: string; oldValue: any; newValue: any }[];
+  snapshot: Partial<EndpointWithResponse>;
+}
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -116,6 +125,43 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
   const [conditionalResponses, setConditionalResponses] = useState<ConditionalResponse[]>([]);
   const [expandedConditions, setExpandedConditions] = useState<number[]>([]);
 
+  // History state
+  const [history, setHistory] = useState<ResponseHistory[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+
+  const loadHistory = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/endpoints/${endpointId}/history`);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setHistory(json.data);
+      }
+    } catch (error) {
+      console.error('Failed to load history:', error);
+    }
+  };
+
+  const handleRestore = async (historyId: string) => {
+    if (!confirm('이 버전으로 복원하시겠습니까?')) return;
+
+    setRestoring(true);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/history/${historyId}/restore`, {
+        method: 'POST',
+      });
+      const json = await res.json();
+      if (json.success) {
+        loadData();
+        loadHistory();
+        setShowHistory(false);
+      }
+    } catch (error) {
+      console.error('Failed to restore:', error);
+    }
+    setRestoring(false);
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -176,6 +222,7 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
 
   useEffect(() => {
     loadData();
+    loadHistory();
   }, [endpointId]);
 
   const handleSave = async () => {
@@ -986,6 +1033,80 @@ export function EndpointDetail({ endpointId, onBack }: EndpointDetailProps) {
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* 히스토리 */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <History className="w-5 h-5" />
+                  변경 히스토리
+                </h3>
+                <button
+                  onClick={() => setShowHistory(!showHistory)}
+                  className="text-sm text-blue-600 hover:text-blue-700"
+                >
+                  {showHistory ? '접기' : `${history.length}개 보기`}
+                </button>
+              </div>
+
+              {showHistory && (
+                <div className="space-y-3 max-h-96 overflow-auto">
+                  {history.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-4">변경 이력이 없습니다</p>
+                  ) : (
+                    history.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                entry.action === 'create'
+                                  ? 'bg-green-100 text-green-700'
+                                  : entry.action === 'delete'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {entry.action === 'create' ? '생성' : entry.action === 'delete' ? '삭제' : '수정'}
+                              </span>
+                              <span className="text-sm text-gray-500">
+                                {new Date(entry.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            {entry.changes.length > 0 && (
+                              <div className="text-sm text-gray-600">
+                                {entry.changes.map((change, i) => (
+                                  <span key={i} className="mr-2">
+                                    <span className="font-mono bg-gray-100 px-1 rounded">
+                                      {change.field}
+                                    </span>
+                                    {change.field !== 'restored' && ' 변경'}
+                                    {i < entry.changes.length - 1 && ', '}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {entry.action !== 'create' && (
+                            <button
+                              onClick={() => handleRestore(entry.id)}
+                              disabled={restoring}
+                              className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50"
+                              title="이 버전으로 복원"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                              복원
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

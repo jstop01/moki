@@ -7,9 +7,12 @@ import {
   CreateLogDto,
   LogFilterOptions,
   LogStats,
+  ResponseHistory,
   MAX_LOGS,
 } from '@mock-api-builder/shared';
 import { fileStore } from './FileStore';
+
+const MAX_HISTORY_PER_ENDPOINT = 50;
 
 /**
  * In-memory storage for endpoints and logs
@@ -18,6 +21,7 @@ import { fileStore } from './FileStore';
 export class MemoryStore {
   private endpoints: Map<string, Endpoint> = new Map();
   private logs: RequestLog[] = [];
+  private history: Map<string, ResponseHistory[]> = new Map();
   private autoSave: boolean = true;
 
   // ============================================
@@ -81,6 +85,10 @@ export class MemoryStore {
     };
 
     this.endpoints.set(endpoint.id, endpoint);
+
+    // Record history
+    this.addHistory(endpoint.id, 'create', [], endpoint);
+
     this.saveToFile(); // 자동 저장
     return endpoint;
   }
@@ -106,6 +114,20 @@ export class MemoryStore {
     const endpoint = this.endpoints.get(id);
     if (!endpoint) return null;
 
+    // Track changes
+    const changes: { field: string; oldValue: any; newValue: any }[] = [];
+    const fieldsToTrack = ['method', 'path', 'responseStatus', 'responseData', 'responseHeaders', 'delay', 'conditionalResponses', 'description', 'status', 'tags'] as const;
+
+    for (const field of fieldsToTrack) {
+      if (dto[field] !== undefined && JSON.stringify(endpoint[field]) !== JSON.stringify(dto[field])) {
+        changes.push({
+          field,
+          oldValue: endpoint[field],
+          newValue: dto[field],
+        });
+      }
+    }
+
     const updated: Endpoint = {
       ...endpoint,
       ...dto,
@@ -113,6 +135,12 @@ export class MemoryStore {
     };
 
     this.endpoints.set(id, updated);
+
+    // Record history if there were changes
+    if (changes.length > 0) {
+      this.addHistory(id, 'update', changes, endpoint);
+    }
+
     this.saveToFile(); // 자동 저장
     return updated;
   }
@@ -121,6 +149,11 @@ export class MemoryStore {
    * Delete an endpoint
    */
   deleteEndpoint(id: string): boolean {
+    const endpoint = this.endpoints.get(id);
+    if (endpoint) {
+      this.addHistory(id, 'delete', [], endpoint);
+    }
+
     const deleted = this.endpoints.delete(id);
     if (deleted) {
       this.saveToFile(); // 자동 저장
@@ -308,6 +341,123 @@ export class MemoryStore {
       endpoints: this.endpoints.size,
       logs: this.logs.length,
     };
+  }
+
+  // ============================================
+  // HISTORY OPERATIONS
+  // ============================================
+
+  /**
+   * Add history entry
+   */
+  private addHistory(
+    endpointId: string,
+    action: 'create' | 'update' | 'delete',
+    changes: { field: string; oldValue: any; newValue: any }[],
+    snapshot: Endpoint
+  ): void {
+    const entry: ResponseHistory = {
+      id: nanoid(),
+      endpointId,
+      timestamp: new Date(),
+      action,
+      changes,
+      snapshot: { ...snapshot },
+    };
+
+    if (!this.history.has(endpointId)) {
+      this.history.set(endpointId, []);
+    }
+
+    const endpointHistory = this.history.get(endpointId)!;
+    endpointHistory.unshift(entry);
+
+    // Trim history if exceeding max
+    if (endpointHistory.length > MAX_HISTORY_PER_ENDPOINT) {
+      endpointHistory.splice(MAX_HISTORY_PER_ENDPOINT);
+    }
+  }
+
+  /**
+   * Get history for an endpoint
+   */
+  getHistory(endpointId: string): ResponseHistory[] {
+    return this.history.get(endpointId) || [];
+  }
+
+  /**
+   * Get all history entries
+   */
+  getAllHistory(): ResponseHistory[] {
+    const all: ResponseHistory[] = [];
+    this.history.forEach((entries) => {
+      all.push(...entries);
+    });
+    return all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+
+  /**
+   * Restore endpoint from history snapshot
+   */
+  restoreFromHistory(historyId: string): Endpoint | null {
+    // Find the history entry
+    for (const [endpointId, entries] of this.history.entries()) {
+      const entry = entries.find(e => e.id === historyId);
+      if (entry) {
+        const snapshot = entry.snapshot;
+
+        // Check if endpoint still exists
+        const existing = this.endpoints.get(endpointId);
+        if (!existing) {
+          // Recreate the endpoint
+          const restored: Endpoint = {
+            id: endpointId,
+            method: snapshot.method!,
+            path: snapshot.path!,
+            responseStatus: snapshot.responseStatus!,
+            responseData: snapshot.responseData,
+            responseHeaders: snapshot.responseHeaders,
+            delay: snapshot.delay,
+            conditionalResponses: snapshot.conditionalResponses,
+            description: snapshot.description,
+            status: snapshot.status || 'active',
+            tags: snapshot.tags,
+            createdAt: snapshot.createdAt || new Date(),
+            updatedAt: new Date(),
+          };
+          this.endpoints.set(endpointId, restored);
+          this.addHistory(endpointId, 'update', [{ field: 'restored', oldValue: null, newValue: historyId }], restored);
+          this.saveToFile();
+          return restored;
+        } else {
+          // Update existing endpoint
+          const restored: Endpoint = {
+            ...existing,
+            ...snapshot,
+            updatedAt: new Date(),
+          };
+          this.endpoints.set(endpointId, restored);
+          this.addHistory(endpointId, 'update', [{ field: 'restored', oldValue: null, newValue: historyId }], restored);
+          this.saveToFile();
+          return restored;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Clear history for an endpoint
+   */
+  clearHistory(endpointId: string): void {
+    this.history.delete(endpointId);
+  }
+
+  /**
+   * Clear all history
+   */
+  clearAllHistory(): void {
+    this.history.clear();
   }
 }
 

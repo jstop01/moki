@@ -8,6 +8,7 @@ import {
   ExportData,
   ImportOptions,
   ImportResult,
+  ResponseHistory,
   MOCK_API_VERSION,
 } from '@mock-api-builder/shared';
 import { parseOpenApiSpec, validateOpenApiSpec } from '../utils/openApiParser';
@@ -430,6 +431,111 @@ router.post('/import/openapi', (req: Request, res: Response) => {
       success: true,
       data: { ...result, specVersion: validation.version },
       message: `Imported ${result.imported} endpoints from OpenAPI ${validation.version}, skipped ${result.skipped}`,
+    };
+    res.json(response);
+  } catch (error: any) {
+    const response: ApiResponse<null> = {
+      success: false,
+      error: error.message,
+    };
+    res.status(500).json(response);
+  }
+});
+
+// ============================================
+// HISTORY
+// ============================================
+
+/**
+ * GET /api/admin/endpoints/:id/history
+ * Get history for an endpoint
+ */
+router.get('/endpoints/:id/history', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const history = memoryStore.getHistory(id);
+
+    const response: ApiResponse<ResponseHistory[]> = {
+      success: true,
+      data: history,
+    };
+    res.json(response);
+  } catch (error: any) {
+    const response: ApiResponse<null> = {
+      success: false,
+      error: error.message,
+    };
+    res.status(500).json(response);
+  }
+});
+
+/**
+ * GET /api/admin/history
+ * Get all history entries
+ */
+router.get('/history', (req: Request, res: Response) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+    const history = memoryStore.getAllHistory().slice(0, limit);
+
+    const response: ApiResponse<ResponseHistory[]> = {
+      success: true,
+      data: history,
+    };
+    res.json(response);
+  } catch (error: any) {
+    const response: ApiResponse<null> = {
+      success: false,
+      error: error.message,
+    };
+    res.status(500).json(response);
+  }
+});
+
+/**
+ * POST /api/admin/history/:id/restore
+ * Restore endpoint from history snapshot
+ */
+router.post('/history/:id/restore', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const restored = memoryStore.restoreFromHistory(id);
+
+    if (!restored) {
+      const response: ApiResponse<null> = {
+        success: false,
+        error: 'History entry not found',
+      };
+      return res.status(404).json(response);
+    }
+
+    const response: ApiResponse<Endpoint> = {
+      success: true,
+      data: restored,
+      message: 'Endpoint restored from history',
+    };
+    res.json(response);
+  } catch (error: any) {
+    const response: ApiResponse<null> = {
+      success: false,
+      error: error.message,
+    };
+    res.status(500).json(response);
+  }
+});
+
+/**
+ * DELETE /api/admin/endpoints/:id/history
+ * Clear history for an endpoint
+ */
+router.delete('/endpoints/:id/history', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    memoryStore.clearHistory(id);
+
+    const response: ApiResponse<null> = {
+      success: true,
+      message: 'History cleared',
     };
     res.json(response);
   } catch (error: any) {
